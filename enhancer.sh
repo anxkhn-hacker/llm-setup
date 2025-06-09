@@ -29,13 +29,11 @@ fi
 # Determine and create shell profile if needed
 SHELL_PROFILE=""
 if [[ "$SHELL" == *"zsh"* ]] || [[ "$0" == *"zsh"* ]]; then
-    # For zsh, prefer .zshrc, fallback to .zprofile
     if [ -f "$HOME/.zshrc" ]; then
         SHELL_PROFILE="$HOME/.zshrc"
     elif [ -f "$HOME/.zprofile" ]; then
         SHELL_PROFILE="$HOME/.zprofile"
     else
-        # Create .zshrc if neither exists
         SHELL_PROFILE="$HOME/.zshrc"
         touch "$SHELL_PROFILE"
         echo "Created $SHELL_PROFILE"
@@ -45,7 +43,6 @@ elif [ -f "$HOME/.bash_profile" ]; then
 elif [ -f "$HOME/.profile" ]; then
     SHELL_PROFILE="$HOME/.profile"
 else
-    # Default to .zshrc on macOS (most common)
     SHELL_PROFILE="$HOME/.zshrc"
     touch "$SHELL_PROFILE"
     echo "Created $SHELL_PROFILE"
@@ -67,6 +64,10 @@ if ! command -v brew &> /dev/null; then
         fi
         eval "$(/opt/homebrew/bin/brew shellenv)"
     fi
+    
+    # Refresh the terminal environment
+    echo "Refreshing terminal environment..."
+    source "$SHELL_PROFILE" 2>/dev/null || true
 else
     echo "Homebrew is already installed"
 fi
@@ -74,8 +75,18 @@ fi
 if ! command -v ollama &> /dev/null; then
     echo "Installing Ollama..."
     brew install ollama
+    echo "Ollama installed successfully"
 else
     echo "Ollama is already installed"
+fi
+
+echo "Ensuring Ollama is available in current session..."
+source "$SHELL_PROFILE" 2>/dev/null || true
+
+if command -v ollama &> /dev/null; then
+    echo "Ollama is available in current session"
+else
+    echo "Ollama may require a new terminal session to be available"
 fi
 
 echo "Starting Ollama service..."
