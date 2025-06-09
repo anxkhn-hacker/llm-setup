@@ -1,119 +1,115 @@
 #!/bin/bash
 
-set -e
+set -euo pipefail
 echo "Setting up Job Enhancer (Ollama + LLM) for macOS..."
 
-# Check if running on macOS
+# Ensure running on macOS
 if [[ "$OSTYPE" != "darwin"* ]]; then
     echo "Error: This script is designed for macOS only."
     exit 1
 fi
 
-# Check for sudo access
-echo "Checking for administrator privileges..."
-if ! sudo -n true 2>/dev/null; then
-    echo "This script requires administrator privileges to install Homebrew and Ollama."
-    echo "You will be prompted for your password once."
-    echo "Press Ctrl+C to cancel, or Enter to continue..."
-    read -r
-    
-    # Validate sudo access and cache credentials for 5 minutes
-    if ! sudo -v; then
-        echo "Error: Administrator privileges are required. Exiting."
-        exit 1
-    fi
+# Check for sudo privileges
+if [[ $EUID -eq 0 ]]; then
+    SUDO_CMD=""
 else
-    echo "Administrator privileges confirmed."
-fi
-
-# Determine and create shell profile if needed
-SHELL_PROFILE=""
-if [[ "$SHELL" == *"zsh"* ]] || [[ "$0" == *"zsh"* ]]; then
-    if [ -f "$HOME/.zshrc" ]; then
-        SHELL_PROFILE="$HOME/.zshrc"
-    elif [ -f "$HOME/.zprofile" ]; then
-        SHELL_PROFILE="$HOME/.zprofile"
+    echo "Checking for administrator privileges..."
+    if sudo -n true 2>/dev/null; then
+        echo "Administrator privileges confirmed (cached)."
+        SUDO_CMD="sudo"
     else
-        SHELL_PROFILE="$HOME/.zshrc"
-        touch "$SHELL_PROFILE"
-        echo "Created $SHELL_PROFILE"
+        echo "Administrator privileges required. You will be prompted for your password."
+        sudo -v || { echo "Sudo required but not granted. Exiting."; exit 1; }
+        SUDO_CMD="sudo"
     fi
-elif [ -f "$HOME/.bash_profile" ]; then
-    SHELL_PROFILE="$HOME/.bash_profile"
-elif [ -f "$HOME/.profile" ]; then
-    SHELL_PROFILE="$HOME/.profile"
-else
-    SHELL_PROFILE="$HOME/.zshrc"
-    touch "$SHELL_PROFILE"
-    echo "Created $SHELL_PROFILE"
 fi
 
+# Determine user's shell and profile
+detect_shell_profile() {
+    local shell_profile=""
+    local shell_name
+    shell_name="$(basename "$SHELL")"
+    if [[ "$shell_name" == "zsh" ]]; then
+        shell_profile="$HOME/.zshrc"
+    elif [[ "$shell_name" == "bash" ]]; then
+        shell_profile="$HOME/.bash_profile"
+        [[ -f "$HOME/.bashrc" ]] && shell_profile="$HOME/.bashrc"
+    fi
+
+    # Fallbacks
+    [[ -z "$shell_profile" && -f "$HOME/.profile" ]] && shell_profile="$HOME/.profile"
+    [[ -z "$shell_profile" ]] && shell_profile="$HOME/.zshrc"
+
+    # Ensure profile exists
+    [[ ! -f "$shell_profile" ]] && touch "$shell_profile" && echo "Created $shell_profile"
+    echo "$shell_profile"
+}
+
+SHELL_PROFILE="$(detect_shell_profile)"
 echo "Using shell profile: $SHELL_PROFILE"
 
-if ! command -v brew &> /dev/null; then
+# Install Homebrew if missing
+if ! command -v brew &>/dev/null; then
     echo "Installing Homebrew..."
-    # Keep sudo session alive
-    sudo -v
     NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    if [[ $(uname -m) == 'arm64' ]]; then
+    # Add brew to PATH for Apple Silicon or Intel
+    if [[ $(uname -m) == "arm64" ]]; then
         echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> "$SHELL_PROFILE"
-        if [ $? -eq 0 ]; then
-            echo "Added Homebrew to shell profile: $SHELL_PROFILE"
-        else
-            echo "Warning: Could not write to shell profile: $SHELL_PROFILE"
-        fi
         eval "$(/opt/homebrew/bin/brew shellenv)"
+    else
+        echo 'eval "$(/usr/local/bin/brew shellenv)"' >> "$SHELL_PROFILE"
+        eval "$(/usr/local/bin/brew shellenv)"
     fi
-    
-    # Refresh the terminal environment
-    echo "Refreshing terminal environment..."
-    source "$SHELL_PROFILE" 2>/dev/null || true
+    export PATH="$PATH:$(brew --prefix)/bin"
+    echo "Homebrew installed and shell environment updated."
 else
-    echo "Homebrew is already installed"
+    echo "Homebrew is already installed."
 fi
 
-if ! command -v ollama &> /dev/null; then
+# Install Ollama if missing
+if ! command -v ollama &>/dev/null; then
     echo "Installing Ollama..."
     brew install ollama
-    echo "Ollama installed successfully"
+    echo "Ollama installed successfully."
 else
-    echo "Ollama is already installed"
+    echo "Ollama is already installed."
 fi
 
-echo "Ensuring Ollama is available in current session..."
-source "$SHELL_PROFILE" 2>/dev/null || true
+# Ensure Ollama is in PATH for current session
+export PATH="$PATH:$(brew --prefix)/bin"
 
-if command -v ollama &> /dev/null; then
-    echo "Ollama is available in current session"
-else
-    echo "Ollama may require a new terminal session to be available"
-fi
+# Source the profile to ensure PATH is up-to-date
+echo "Sourcing profile $SHELL_PROFILE ..."
+# shellcheck source=/dev/null
+source "$SHELL_PROFILE"
 
 echo "Starting Ollama service..."
 brew services start ollama
 
-sleep 5
+# Wait for Ollama service to become available (by checking ollama list)
+echo "Waiting for Ollama service to be available..."
+MAX_WAIT=60
+while ! ollama list &>/dev/null; do
+    sleep 2
+    MAX_WAIT=$((MAX_WAIT-2))
+    if (( MAX_WAIT <= 0 )); then
+        echo "Ollama service failed to start within expected time."
+        exit 1
+    fi
+done
+echo "Ollama service is running."
 
 echo "Pulling and loading Gemma 3 model (this may take a few minutes)..."
 ollama pull gemma3:4b
 
-echo "Loading model into memory..."
-ollama run gemma3:4b ""
-
 echo "Verifying installation..."
 if ollama list | grep -q "gemma3:4b"; then
-    echo "Gemma 3 model is installed and ready"
+    echo "Gemma 3 model is installed and ready."
 else
-    echo "Failed to install Gemma 3 model"
+    echo "Failed to install Gemma 3 model."
     exit 1
 fi
 
-if curl -s http://localhost:11434/api/tags > /dev/null; then
-    echo "Ollama service is running on http://localhost:11434"
-else
-    echo "Ollama service is not responding"
-    exit 1
-fi
-echo ""
-echo "Setup complete! The job enhancer is ready to use."
-echo ""
+echo
+echo "Setup complete! The Job Enhancer is ready to use."
+echo
