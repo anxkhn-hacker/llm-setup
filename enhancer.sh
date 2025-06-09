@@ -110,7 +110,7 @@ echo "Ollama is running."
 
 # Pull model
 echo "Pulling Gemma 3 model (this may take a few minutes)..."
-ollama pull gemma3:4b
+ollama run gemma3:4b ""
 
 # Verify
 echo "Verifying model installation..."
