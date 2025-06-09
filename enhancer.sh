@@ -9,6 +9,23 @@ if [[ "$OSTYPE" != "darwin"* ]]; then
     exit 1
 fi
 
+# Check for sudo access
+echo "Checking for administrator privileges..."
+if ! sudo -n true 2>/dev/null; then
+    echo "This script requires administrator privileges to install Homebrew and Ollama."
+    echo "You will be prompted for your password once."
+    echo "Press Ctrl+C to cancel, or Enter to continue..."
+    read -r
+    
+    # Validate sudo access and cache credentials for 5 minutes
+    if ! sudo -v; then
+        echo "Error: Administrator privileges are required. Exiting."
+        exit 1
+    fi
+else
+    echo "Administrator privileges confirmed."
+fi
+
 SHELL_PROFILE=""
 if [ -f "$HOME/.zshrc" ]; then
     SHELL_PROFILE="$HOME/.zshrc"
