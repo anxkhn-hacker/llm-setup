@@ -26,20 +26,45 @@ else
     echo "Administrator privileges confirmed."
 fi
 
+# Determine and create shell profile if needed
 SHELL_PROFILE=""
-if [ -f "$HOME/.zshrc" ]; then
-    SHELL_PROFILE="$HOME/.zshrc"
+if [[ "$SHELL" == *"zsh"* ]] || [[ "$0" == *"zsh"* ]]; then
+    # For zsh, prefer .zshrc, fallback to .zprofile
+    if [ -f "$HOME/.zshrc" ]; then
+        SHELL_PROFILE="$HOME/.zshrc"
+    elif [ -f "$HOME/.zprofile" ]; then
+        SHELL_PROFILE="$HOME/.zprofile"
+    else
+        # Create .zshrc if neither exists
+        SHELL_PROFILE="$HOME/.zshrc"
+        touch "$SHELL_PROFILE"
+        echo "Created $SHELL_PROFILE"
+    fi
 elif [ -f "$HOME/.bash_profile" ]; then
     SHELL_PROFILE="$HOME/.bash_profile"
 elif [ -f "$HOME/.profile" ]; then
     SHELL_PROFILE="$HOME/.profile"
+else
+    # Default to .zshrc on macOS (most common)
+    SHELL_PROFILE="$HOME/.zshrc"
+    touch "$SHELL_PROFILE"
+    echo "Created $SHELL_PROFILE"
 fi
+
+echo "Using shell profile: $SHELL_PROFILE"
 
 if ! command -v brew &> /dev/null; then
     echo "Installing Homebrew..."
+    # Keep sudo session alive
+    sudo -v
     NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     if [[ $(uname -m) == 'arm64' ]]; then
         echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> "$SHELL_PROFILE"
+        if [ $? -eq 0 ]; then
+            echo "Added Homebrew to shell profile: $SHELL_PROFILE"
+        else
+            echo "Warning: Could not write to shell profile: $SHELL_PROFILE"
+        fi
         eval "$(/opt/homebrew/bin/brew shellenv)"
     fi
 else
