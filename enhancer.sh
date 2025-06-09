@@ -1,7 +1,13 @@
 #!/bin/bash
 
 set -e
-echo "Setting up Job Enhancer (Ollama + LLM)..."
+echo "Setting up Job Enhancer (Ollama + LLM) for macOS..."
+
+# Check if running on macOS
+if [[ "$OSTYPE" != "darwin"* ]]; then
+    echo "Error: This script is designed for macOS only."
+    exit 1
+fi
 
 SHELL_PROFILE=""
 if [ -f "$HOME/.zshrc" ]; then
@@ -12,43 +18,26 @@ elif [ -f "$HOME/.profile" ]; then
     SHELL_PROFILE="$HOME/.profile"
 fi
 
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    if ! command -v brew &> /dev/null; then
-        echo "Installing Homebrew..."
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-        if [[ $(uname -m) == 'arm64' ]]; then
-            echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> "$SHELL_PROFILE"
-            eval "$(/opt/homebrew/bin/brew shellenv)"
-        fi
-    else
-        echo "Homebrew is already installed"
-    fi
-    
-    if ! command -v ollama &> /dev/null; then
-        echo "Installing Ollama..."
-        brew install ollama
-    else
-        echo "Ollama is already installed"
+if ! command -v brew &> /dev/null; then
+    echo "Installing Homebrew..."
+    NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    if [[ $(uname -m) == 'arm64' ]]; then
+        echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> "$SHELL_PROFILE"
+        eval "$(/opt/homebrew/bin/brew shellenv)"
     fi
 else
-    
-    if ! command -v ollama &> /dev/null; then
-        echo "Installing Ollama..."
-        curl -fsSL https://ollama.ai/install.sh | sh
-    else
-        echo "Ollama is already installed"
-    fi
+    echo "Homebrew is already installed"
+fi
+
+if ! command -v ollama &> /dev/null; then
+    echo "Installing Ollama..."
+    brew install ollama
+else
+    echo "Ollama is already installed"
 fi
 
 echo "Starting Ollama service..."
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    brew services start ollama
-else
-    
-    if ! pgrep -x "ollama" > /dev/null; then
-        nohup ollama serve > /dev/null 2>&1 &
-    fi
-fi
+brew services start ollama
 
 sleep 5
 
